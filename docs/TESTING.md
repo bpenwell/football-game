@@ -105,9 +105,11 @@ Each test gets its own output subdirectory and its own fresh, empty Godot user d
 (`XDG_DATA_HOME` and `XDG_CONFIG_HOME`; only the `XDG_CACHE_HOME` shader cache is shared), so a case
 that saves settings, a profile or replays to the default `user://` paths can't leak them into a later
 case, whatever the order (#236).
-`harness.gd` asserts that every case starts with nothing in `user://` but Godot's own logs and shader
-cache, and `cross_case_save_test.gd` deliberately saves a name to the default `settings.cfg` early in
-the run so later first-run cases (`menu_boot_test`, `lobby_real_render_test`) prove it. Per-test
+`harness.gd` allows Godot's `logs`, `shader_cache`, and `vulkan` directories in a fresh `user://`.
+Every file and every other directory fails the guard. `menu_boot_test.gd` checks that the first-run
+prompt still appears with a Vulkan cache present (#402). `cross_case_save_test.gd` deliberately saves
+a name to the default `settings.cfg` early in the run so later first-run cases (`menu_boot_test`,
+`lobby_real_render_test`) exercise isolation between cases. Per-test
 `launch.settings_path = "user://test_<case>_settings.cfg"` lines are optional now; existing ones can stay.
 
 Add a `tests/visual/<scenario>_test.gd` script extending `tests/visual/harness.gd`. Exercise the
