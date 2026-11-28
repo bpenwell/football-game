@@ -36,6 +36,10 @@ for every test process is throwaway. Tests can't touch the player's saves or set
 (or another session) changing settings mid-run can't fail the guard. Running `smoke.sh` alone still
 uses the real dir plus its before/after guard, so prefer `check.sh`.
 
+`scripts/net_test.sh` gives its host and client fresh profile files on every run, including
+standalone runs on Windows. This keeps achievements from previous runs out of the match XP
+assertion (#419).
+
 **Pre-commit hook (opt-in).** Nothing enables it on clone. `./scripts/install-hooks.sh` sets
 `core.hooksPath=scripts/githooks` in the clone's git config, so it applies to every worktree at once,
 including other sessions' (a branch without `scripts/githooks` simply has no hook). Once installed,

@@ -178,6 +178,8 @@ func _physics_process(_dt: float) -> bool:
 	if f == 2:
 		xp_before = main.profile.xp
 		games_before = main.profile.games
+		check(xp_before == 0 and games_before == 0 and main.profile.achievements.is_empty(),
+			"the network award test starts with a fresh client profile")
 		had_first_td = main.profile.achievements.has("first_td")
 		had_first_win = main.profile.achievements.has("first_win")
 		main.net.lobby_received.connect(_on_lobby)
@@ -289,8 +291,11 @@ func _physics_process(_dt: float) -> bool:
 		check(remote_handoff_confirmed and main.controlled_id == aid, "online QB keeps the same athlete after the handoff")
 		check(sent_grounding_throw and got_grounding_flag, "online J throw receives the host's grounding flag")
 		check(checked_retreated_keeper, "received the host's retreated keeper snapshot")
-		check(got_awards and main.profile.xp == xp_before + 100 and main.profile.games == games_before + 1,
-			"same-named losing client receives only its own 100 XP")
+		var xp_delta: int = main.profile.xp - xp_before
+		var games_delta: int = main.profile.games - games_before
+		check(got_awards and xp_delta == 100 and games_delta == 1,
+			"same-named losing client receives only its own 100 XP (award received: %s, XP: %+d, games: %+d)"
+			% [got_awards, xp_delta, games_delta])
 		check(main.profile.achievements.has("first_td") == had_first_td
 			and main.profile.achievements.has("first_win") == had_first_win,
 			"host's touchdown and win leave the client's achievements as they were")
