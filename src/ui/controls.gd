@@ -22,7 +22,6 @@ const OTHER_CONTROLS := [
 	"Mouse: look live · middle drag: look pre-snap · hold C: drag to a taunt, release (tap: last taunt)",
 	"QB / passer: mouse aims your view (look higher to throw higher) · hold left click to charge distance, release to throw",
 	"Hold right click: block",
-	"Gamepad: left stick move · right stick QB aim · A snap / jump · B dive · X / Y spin · R3 handoff · RT pass · LT sprint",
 	"Replay viewer: Space pause · Left / Right seek · [ / ] speed",
 ]
 const SYNTH_DEVICE := -42     # marks events we injected (never re-translated)
@@ -37,6 +36,15 @@ const PAD_BUTTONS := {
 }
 ## Gamepad trigger axis -> action (held while past TRIGGER_ON)
 const PAD_TRIGGERS := {JOY_AXIS_TRIGGER_RIGHT: "throw", JOY_AXIS_TRIGGER_LEFT: "sprint"}
+const PAD_PAUSE := JOY_BUTTON_START
+const PAD_BUTTON_NAMES := {
+	JOY_BUTTON_A: "A", JOY_BUTTON_B: "B", JOY_BUTTON_X: "X", JOY_BUTTON_Y: "Y",
+	JOY_BUTTON_LEFT_SHOULDER: "LB", JOY_BUTTON_RIGHT_SHOULDER: "RB",
+	JOY_BUTTON_LEFT_STICK: "L3", JOY_BUTTON_RIGHT_STICK: "R3", JOY_BUTTON_BACK: "Back",
+	JOY_BUTTON_DPAD_UP: "D-pad up", JOY_BUTTON_DPAD_LEFT: "D-pad left",
+	JOY_BUTTON_DPAD_RIGHT: "D-pad right", JOY_BUTTON_DPAD_DOWN: "D-pad down", JOY_BUTTON_START: "Start",
+}
+const PAD_TRIGGER_NAMES := {JOY_AXIS_TRIGGER_RIGHT: "RT", JOY_AXIS_TRIGGER_LEFT: "LT"}
 
 ## Saved bindings are stored as overrides of the default keys, so a default change
 ## needs a migration. Version 1 = before #138 (C dash, U timeout, T taunt, R next).
@@ -131,9 +139,25 @@ static func stick_keys(v: Vector2) -> Dictionary:
 static func key_name(k: int) -> String:
 	return "None" if k == KEY_NONE else OS.get_keycode_string(k)
 
+static func notes_text() -> String:
+	var inputs_by_action := {}
+	for button in PAD_BUTTONS:
+		var action: String = PAD_BUTTONS[button]
+		var name: String = PAD_BUTTON_NAMES.get(button, "Button %d" % button)
+		inputs_by_action[action] = inputs_by_action.get(action, []) + [name]
+	for axis in PAD_TRIGGERS:
+		var action: String = PAD_TRIGGERS[axis]
+		var name: String = PAD_TRIGGER_NAMES.get(axis, "Axis %d" % axis)
+		inputs_by_action[action] = inputs_by_action.get(action, []) + [name]
+	var pad_bindings := PackedStringArray()
+	for action in inputs_by_action:
+		pad_bindings.append("%s  %s" % [" / ".join(inputs_by_action[action]), label(action)])
+	var sticks_and_pause := "Left stick  Move · Right stick  QB aim · %s  Pause menu" % PAD_BUTTON_NAMES[PAD_PAUSE]
+	return "\n".join(OTHER_CONTROLS) + "\nGamepad — " + sticks_and_pause + " · " + " · ".join(pad_bindings)
+
 static func help_text(bindings: Dictionary) -> String:
 	var lines := []
 	for a in ACTIONS:
 		lines.append("%-24s %s" % [a[1], key_name(key_for(a[0], bindings))])
-	lines.append_array(OTHER_CONTROLS)
+	lines.append(notes_text())
 	return "\n".join(lines)

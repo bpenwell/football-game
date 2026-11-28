@@ -1,6 +1,7 @@
 extends "res://tests/test_case.gd"
 ## #138: Gridiron default keys (R dash, T timeout, C taunt, Q/E spin, F dive, WASD) and the
 ## migration of bindings saved under the old layout (C dash, U timeout, T taunt, R next).
+## #298: every mapped controller input is listed in the in-game help.
 
 const Controls := preload("res://src/ui/controls.gd")
 const Settings := preload("res://src/ui/settings_store.gd")
@@ -40,6 +41,25 @@ func test_hint_copy_names_new_keys() -> void:
 	var help := Controls.help_text({})
 	assert_true(help.find("hold C") >= 0 and help.find("T performs") < 0, "taunt hint says hold C")
 	assert_true(help.find("wheel: pick taunt") < 0, "the mouse wheel no longer picks taunts (#139)")
+
+func test_gamepad_help_lists_all_bindings() -> void:
+	var help := Controls.help_text({})
+	var entries := help.split("\n")[-1].split(" · ")
+	for button in Controls.PAD_BUTTONS:
+		var action: String = Controls.PAD_BUTTONS[button]
+		_assert_pad_hint(entries, Controls.PAD_BUTTON_NAMES[button], Controls.label(action))
+	for axis in Controls.PAD_TRIGGERS:
+		var action: String = Controls.PAD_TRIGGERS[axis]
+		_assert_pad_hint(entries, Controls.PAD_TRIGGER_NAMES[axis], Controls.label(action))
+	for hint in ["Left stick  Move", "Right stick  QB aim", "Start  Pause menu"]:
+		assert_true(help.contains(hint), "gamepad help includes " + hint)
+
+func _assert_pad_hint(entries: PackedStringArray, input: String, label: String) -> void:
+	var suffix := "  " + label
+	for entry in entries:
+		if entry.ends_with(suffix) and entry.trim_suffix(suffix).split(" / ").has(input):
+			return
+	assert_true(false, "gamepad help includes %s for %s" % [input, label])
 
 func test_migration_untouched_player_gets_new_defaults() -> void:
 	assert_eq(Controls.migrate_bindings({}, 1), {}, "never rebound: empty overrides = new defaults")

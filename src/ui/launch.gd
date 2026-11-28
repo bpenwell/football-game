@@ -153,7 +153,7 @@ func _input(e: InputEvent) -> void:
 	if e.device == Controls.SYNTH_DEVICE or not in_game():
 		return
 	var esc: bool = (e is InputEventKey and e.pressed and not e.echo and e.keycode == KEY_ESCAPE) \
-		or (e is InputEventJoypadButton and e.pressed and e.button_index == JOY_BUTTON_START)
+		or (e is InputEventJoypadButton and e.pressed and e.button_index == Controls.PAD_PAUSE)
 	if esc:
 		get_viewport().set_input_as_handled()
 		if _overlay:
@@ -271,8 +271,10 @@ func _show_controls(box: VBoxContainer) -> void:
 		bindings.add_child(key)
 	var notes := Label.new()
 	notes.name = "ControlsNotes"
-	notes.text = "\n".join(Controls.OTHER_CONTROLS)
-	notes.add_theme_font_size_override("font_size", 15)
+	notes.text = Controls.notes_text()
+	notes.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	notes.add_theme_font_size_override("font_size", 14)
+	notes.add_theme_constant_override("line_spacing", 0)
 	help.add_child(notes)
 
 func _close_overlay() -> void:

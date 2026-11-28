@@ -102,8 +102,8 @@ that moment. Keyboard rebinds don't move pad buttons, and the pad itself isn't r
 
 Not on the pad yet (#207): block (right click), team timeout (T), the taunt wheel (C) and the kick call (K).
 
-In game, Pause (Esc / Start) → **Controls** shows a one-line gamepad summary from `Controls.OTHER_CONTROLS`. It is
-hand-written and misses several buttons above (#298). A gamepad tab built from the map is part of #134.
+In game, Pause (Esc / Start) → **Controls** shows the sticks, Start and every gamepad button and trigger.
+The reference is generated from the same gamepad bindings the game uses (#298).
 
 ## Where it lives
 - Sim: `src/sim/athlete.gd` (move charges, spin/dash, block), `src/sim/world.gd` (`spin(side)`, `evade`,
