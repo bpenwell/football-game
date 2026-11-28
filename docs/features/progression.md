@@ -60,7 +60,7 @@ Progress is stored in JSON files on each player's own machine. Ratings use a ran
 |---|---|
 | Trim | Chalk 0, Ink 0, Ember 1, Tide 2, Volt 4, Aurora 8 |
 | Helmet | Plain 0, Gold Stripe 2, Crimson Stripe 3, Chrome 6 |
-| Celebration (plays on your TD) | None 0, Spin 1, Moon Hop 3, Flip 5 |
+| Celebration (plays on your TD; Moon Hop bounces with a fist pump, #455) | None 0, Spin 1, Moon Hop 3, Flip 5 |
 | Number | 0–99 |
 | Badge | season rewards from ranked |
 - Locked items are listed as `Name (level N)`, disabled. The host sanitizes each look and echoes it to everyone. Looks never enter the sim.

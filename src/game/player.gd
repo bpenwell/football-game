@@ -34,6 +34,7 @@ const MODEL_SCALE := 1.08
 const BLEND := 0.18
 ## Carry pose blend rate (1/s): about 0.2 s to tuck the ball in or out.
 const CARRY_K := 14.0
+const HOP_CLIP := "u2/Yes"   # Moon Hop: a fist pump as he bounces; the Jump loop held both arms straight out (#455)
 ## Head look smoothing (1/s): the look point trails a fast ball a little, like eyes do.
 const LOOK_K := 10.0
 ## Heads only turn when the athlete is big enough on screen to see it: the camera view's
@@ -605,7 +606,7 @@ func _process(delta: float) -> void:
 
 func _choose_anim(spd: float, down: bool) -> void:
 	if celebrate_t > 0.0:
-		_play({"hop": "Jump", "flip": "Roll"}.get(celebrate_kind, "Dance"))
+		_play({"hop": HOP_CLIP, "flip": "Roll"}.get(celebrate_kind, "Dance"))
 		return
 	if is_falling():
 		if not fall.holding() and not fall.rising():   # hit-stop: keep the contact frame; getting up: tackle_fall plays it
