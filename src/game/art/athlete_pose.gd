@@ -55,6 +55,12 @@ const REACH_PITCH_DOWN := deg_to_rad(40.0)
 const TWIST_MAX := deg_to_rad(35.0)
 const TWIST_FADE_FROM := deg_to_rad(140.0)
 const TWIST_FADE := deg_to_rad(30.0)
+## Diving catch (#360): the chest rolls about the spine to face the ball (up to DIVE_ROLL_MAX)
+## and the spine bends toward it (up to DIVE_LEAN_MAX), split over spine_02 and spine_03. A
+## ball almost along the spine (past DIVE_LEAN_FADE_FROM) bends nothing, as TWIST_FADE_FROM.
+const DIVE_ROLL_MAX := deg_to_rad(50.0)
+const DIVE_LEAN_MAX := deg_to_rad(30.0)
+const DIVE_LEAN_FADE_FROM := deg_to_rad(150.0)
 ## A ball this far to one side (after the twist) is caught with the near arm only; the far
 ## arm stays in the stance. Blends between the two angles.
 const ONE_ARM_FROM := deg_to_rad(20.0)
@@ -93,7 +99,7 @@ var look_weight := 0.0            # 0 = clip's head, 1 = full look
 var catch_weight := 0.0           # 0 = no catch pose, 1 = full stance/reach
 var catch_target := Vector3.ZERO  # the ball, skeleton space
 var catch_reach := 0.0            # 0 = ready stance, 1 = hands on the ball
-var catch_twist := true           # keep the slide clip's torso during a diving reach
+var catch_dive := 0.0             # 0 = standing catch, 1 = diving catch (player.gd smooths it)
 var push_clip: Animation          # the Push clip (player.gd sets it); null: no push layer
 var push_weight := 0.0            # 0 = playing clip, 1 = Push clip on the upper body
 var push_time := 0.0              # s into push_clip
@@ -137,15 +143,14 @@ func apply(sk: Skeleton3D) -> void:
 	# The arms do one job: the stronger of catching and carrying (they cross over at the catch).
 	var catching := catch_weight > weight
 	_pre = Transform3D()
-	if catching and catch_twist:
+	if catching:
 		_plan_twist(sk)
 	if look_weight > 0.0:
 		_look(sk)
 	if catching:
 		_catch(sk)
-		if catch_twist:
-			sk.set_bone_pose_rotation(_bones.spine_02, _twist_q[0])
-			sk.set_bone_pose_rotation(_bones.spine_03, _twist_q[1])
+		sk.set_bone_pose_rotation(_bones.spine_02, _twist_q[0])
+		sk.set_bone_pose_rotation(_bones.spine_03, _twist_q[1])
 		return
 	if weight <= 0.0:
 		return
@@ -184,21 +189,36 @@ static func _upright(chest: Transform3D) -> Transform3D:
 	var z := Vector3(chest.basis.z.x, 0.0, chest.basis.z.z).normalized()
 	return Transform3D(Basis(Vector3.UP.cross(z), Vector3.UP, z), chest.origin)
 
+## The reach frame: _upright standing; diving, the athlete's heading (skeleton +Z), since a
+## lying chest's own heading is anywhere (a slide's chest faces the sky).
+## Blended as an angle, so a half-dived frame never collapses.
+func _catch_frame(chest: Transform3D) -> Transform3D:
+	var yaw := atan2(chest.basis.z.x, chest.basis.z.z) if Vector2(chest.basis.z.x, chest.basis.z.z).length() > 1e-4 else 0.0
+	yaw = lerp_angle(yaw, 0.0, catch_dive)
+	var z := Vector3(sin(yaw), 0.0, cos(yaw))
+	return Transform3D(Basis(Vector3.UP.cross(z), Vector3.UP, z), chest.origin)
+
 ## A bone's skeleton-space pose with this update's twist applied (see _pre).
 func _g(sk: Skeleton3D, bone: int) -> Transform3D:
 	return _pre * sk.get_bone_global_pose(bone)
 
-## Turn the upper body toward the ball (#246): up to TWIST_MAX about the vertical,
-## half on spine_02 and half on spine_03. Computes _pre and the two local rotations to write.
+## Turn the upper body toward the ball (#246): standing, up to TWIST_MAX about the vertical;
+## diving (#360), the chest rolls and the spine bends toward it (_dive_twist), blended by
+## catch_dive. Half on spine_02, half on spine_03. Computes _pre and the two local rotations.
 func _plan_twist(sk: Skeleton3D) -> void:
 	var s2: int = _bones.spine_02
 	var g2 := sk.get_bone_global_pose(s2)
 	var g3 := sk.get_bone_global_pose(_bones.spine_03)
-	var d := _upright(g3).affine_inverse() * catch_target
-	var yaw := atan2(d.x, d.z)
-	var fade := clampf(1.0 - (absf(yaw) - TWIST_FADE_FROM) / TWIST_FADE, 0.0, 1.0)
-	# About true vertical: a twist about a sprint-leaning spine would overshoot the heading.
-	var r := Basis(Vector3.UP, clampf(yaw, -TWIST_MAX, TWIST_MAX) * fade * catch_weight * 0.5)
+	var q := Quaternion.IDENTITY
+	if catch_dive < 1.0:
+		var d := _upright(g3).affine_inverse() * catch_target
+		var yaw := atan2(d.x, d.z)
+		var fade := clampf(1.0 - (absf(yaw) - TWIST_FADE_FROM) / TWIST_FADE, 0.0, 1.0)
+		# About true vertical: a twist about a sprint-leaning spine would overshoot the heading.
+		q = Quaternion(Vector3.UP, clampf(yaw, -TWIST_MAX, TWIST_MAX) * fade * 0.5)
+	if catch_dive > 0.0:
+		q = q.slerp(_dive_twist(g2, g3, sk.get_bone_global_pose(_bones.neck_01).origin), catch_dive)
+	var r := Basis(Quaternion.IDENTITY.slerp(q, catch_weight))
 	var t2 := Transform3D(r, g2.origin - r * g2.origin)
 	var p3 := t2 * g3.origin
 	_pre = Transform3D(r, p3 - r * p3) * t2
@@ -206,11 +226,34 @@ func _plan_twist(sk: Skeleton3D) -> void:
 	_twist_q[0] = (parent.inverse() * r * g2.basis).orthonormalized().get_rotation_quaternion()
 	_twist_q[1] = ((r * g2.basis).inverse() * r * r * g3.basis).orthonormalized().get_rotation_quaternion()
 
+## Half the diving twist (#360), skeleton space: the chest front (spine_03 +Z) rolls about
+## the spine (spine_02 to neck) toward the ball, then the spine bends toward it, both clamped.
+func _dive_twist(g2: Transform3D, g3: Transform3D, neck: Vector3) -> Quaternion:
+	var spine := (neck - g2.origin).normalized()
+	var to := catch_target - g2.origin
+	if spine.length() < 0.5 or to.length() < 0.01:
+		return Quaternion.IDENTITY
+	to = to.normalized()
+	var front := g3.basis.z - spine * g3.basis.z.dot(spine)
+	var side := to - spine * to.dot(spine)
+	var roll := 0.0
+	if front.length() > 0.1 and side.length() > 0.1:
+		roll = front.signed_angle_to(side, spine)
+		roll *= clampf(1.0 - (absf(roll) - TWIST_FADE_FROM) / TWIST_FADE, 0.0, 1.0)   # straight behind: no side
+		roll = clampf(roll, -DIVE_ROLL_MAX, DIVE_ROLL_MAX)
+	var q := Quaternion(spine, roll)
+	var bend := spine.angle_to(to)
+	var axis := spine.cross(to)
+	if axis.length() > 0.01:
+		var fade := clampf(1.0 - (bend - DIVE_LEAN_FADE_FROM) / TWIST_FADE, 0.0, 1.0)
+		q = Quaternion(axis.normalized(), minf(bend, DIVE_LEAN_MAX) * fade) * q
+	return Quaternion.IDENTITY.slerp(q, 0.5)
+
 ## Ready stance blended toward hands on the ball by catch_reach, palms toward the ball. The
 ## reach direction is clamped to what a shoulder can do (never behind); a ball well off to
 ## one side is caught with the near arm only.
 func _catch(sk: Skeleton3D) -> void:
-	var chest := _upright(_g(sk, _bones.spine_03))
+	var chest := _catch_frame(_g(sk, _bones.spine_03))
 	var to_ball := catch_target - chest.origin
 	var d := chest.basis.inverse() * to_ball
 	var yaw := atan2(d.x, d.z)

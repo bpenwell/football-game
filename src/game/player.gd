@@ -480,7 +480,9 @@ func _update_catch(delta: float, can_reach: bool, dive_reach: bool) -> void:
 		else _catch_wanted and can_reach and _pass_in_air() \
 		and look_node.global_position.distance_to(chest) < CATCH_LEAD * world.ball.velocity.length()
 	if catching:
-		pose.catch_twist = not (dive_reach if replay_flags < 0 else (replay_flags & Replay.F_DIVING) != 0)
+		# Diving (#360): the reach frame and twist follow the dive. Fresh catch: no blend in.
+		var dive := 1.0 if (dive_reach if replay_flags < 0 else (replay_flags & Replay.F_DIVING) != 0) else 0.0
+		pose.catch_dive = dive if pose.catch_weight <= 0.0 else lerpf(pose.catch_dive, dive, 1.0 - exp(-CARRY_K * delta))
 		var ball := look_node.global_position
 		pose.catch_target = _skel.global_transform.affine_inverse() * ball
 		pose.catch_reach = clampf((REACH_FAR - ball.distance_to(chest)) / (REACH_FAR - REACH_NEAR), 0.0, 1.0)
@@ -671,7 +673,7 @@ static func replay_bits(world) -> PackedByteArray:
 		var bits := 0
 		if a.engaged_with >= 0 and a.velocity.length() < PUSH_MAX_SPEED:
 			bits = Replay.F_PUSH
-		elif flying:
+		elif flying and not a.is_grounded() and not (a.is_diving() and (world.is_chaos() or world.kicked)):   # as live (_update_look)
 			var r := int(a.role)
 			var chest := Vector3(a.position.x, a.position.y, CATCH_HEIGHT)
 			if a.position.distance_to(cp) < CATCH_RANGE and chest.distance_to(b.position) < CATCH_LEAD * b.velocity.length() \

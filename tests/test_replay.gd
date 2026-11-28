@@ -89,6 +89,16 @@ func test_capture_records_block_catch_and_fair_catch_bits() -> void:
 	w.athletes[wr].velocity = Vector2(0.0, 9.0)   # too fast to push, so only the engaged gate stops the reach
 	assert_eq(PlayerNode.replay_bits(w)[wr], 0, "an engaged receiver doesn't reach")
 	w.athletes[wr].engaged_with = -1
+	# As live (#360): a diver reaches, a diver on a kick doesn't, an athlete on the turf doesn't.
+	w.athletes[wr].dive_t = 0.2
+	assert_true(PlayerNode.replay_bits(w)[wr] & Replay.F_CATCH != 0, "a diving receiver reaches")
+	w.kicked = true
+	assert_eq(PlayerNode.replay_bits(w)[wr], 0, "diving at a kick: no reach")
+	w.kicked = false
+	w.athletes[wr].dive_t = 0.0
+	w.athletes[wr].recover_t = 0.5
+	assert_eq(PlayerNode.replay_bits(w)[wr], 0, "lying on the turf: no reach")
+	w.athletes[wr].recover_t = 0.0
 	w.ball.state = Ball.State.HELD
 	assert_eq(Array(PlayerNode.replay_bits(w)).count(Replay.F_CATCH), 0, "nothing in the air: no catch bits")
 	for a in w.athletes:

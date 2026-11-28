@@ -82,9 +82,12 @@ the last segment's direction; comeback routes (CURL) settle instead of backpedal
 - Sideline catches use the receiver's ground position at contact (#338). The ball can be beyond the line
   while an in-bounds receiver completes the catch. A receiver standing outside the boundary is incomplete.
   A defender standing outside cannot complete an interception.
-- During an active Classic dive, an athlete reaching for a nearby pass keeps the slide’s torso and
-  leg animation. The arms use the standing reach’s shoulder and elbow limits, and blend into
-  the carry after the catch (#360).
+- During an active Classic dive, an athlete reaching for a nearby pass keeps the dive clip's legs.
+  The chest rolls about the spine to face the ball (up to 50°) and the spine bends toward it (up to
+  30°), and the near arm reaches for the ball where it is, measured from the athlete's heading (a
+  lying chest faces anywhere). The arms use the standing reach's shoulder and elbow limits. A
+  standing reach that becomes a dive blends between the two, and the arms blend into the carry
+  after the catch (#360). Replays use the recorded dive and catch flags, so they show the same.
 - Control stays on your own athlete after a catch or handoff. Bots run with the ball when they have it.
 
 ### Run game

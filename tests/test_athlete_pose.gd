@@ -257,28 +257,86 @@ func test_reach_closes_both_hands_on_the_ball() -> void:
 	assert_true(rs.dot(ls) < 0.0, "hands on opposite sides of the ball")
 	v.free()
 
-func test_diving_reach_keeps_the_slide_torso_and_legs() -> void:
+## #360: diving, the chest rolls about the spine toward the ball and the spine bends toward
+## it; the legs keep the dive clip, and the near hand gets to a ball within reach.
+func test_diving_reach_turns_the_chest_toward_the_ball() -> void:
 	var v = _view(Athlete.Role.WR)
 	var sk := _skel(v)
-	_pose(sk, v.anim.get_animation("u2/Slide_Start"), 0.26)
-	var clip_rotations := {}
-	for bone in ["spine_02", "spine_03", "thigh_r", "thigh_l"]:
-		clip_rotations[bone] = sk.get_bone_pose_rotation(sk.find_bone(bone))
-	var chest := Pose._upright(sk.get_bone_global_pose(sk.find_bone("spine_03")))
-	var ball := chest * Vector3(-0.28, 0.15, 0.45)
-	var original_distance := _bone_pos(sk, "hand_r").distance_to(ball)
-	v.pose.catch_twist = false
+	var clip: Animation = v.anim.get_animation("u2/Slide_Start")
+	for c in [["left", Vector3(0.55, 0.1, 0.45), "hand_l"], ["right", Vector3(-0.55, 0.1, 0.45), "hand_r"], ["high", Vector3(0.0, 0.75, 0.35), "hand_r"]]:
+		_pose(sk, clip, 0.26)
+		var legs := [sk.get_bone_pose_rotation(sk.find_bone("thigh_r")), sk.get_bone_pose_rotation(sk.find_bone("thigh_l"))]
+		var ball: Vector3 = _bone_pos(sk, "spine_03") + c[1]   # skeleton space: +Z heading, +X left
+		var before := _chest_off_ball(sk, ball)
+		var hand_before := _bone_pos(sk, c[2]).distance_to(ball)
+		_dive_catch(v, sk, ball, 1.0)
+		var after := _chest_off_ball(sk, ball)
+		assert_true(before > 5.0 and after < before * 0.5, "%s ball: chest turns toward it (%.0f -> %.0f deg off)" % [c[0], before, after])
+		assert_true(_bone_pos(sk, c[2]).distance_to(ball) < minf(hand_before - 0.1, 0.3), "%s ball: near hand reaches it" % c[0])
+		assert_true(sk.get_bone_pose_rotation(sk.find_bone("thigh_r")).is_equal_approx(legs[0]) 			and sk.get_bone_pose_rotation(sk.find_bone("thigh_l")).is_equal_approx(legs[1]), "%s ball: legs follow the dive clip" % c[0])
+	v.free()
+
+## The diving twist stays within human limits for a ball anywhere around the body: the chest
+## turns at most DIVE_ROLL_MAX + DIVE_LEAN_MAX in all, and the arm is never stretched.
+func test_diving_twist_stays_within_limits_for_every_ball_direction() -> void:
+	var v = _view(Athlete.Role.WR)
+	var sk := _skel(v)
+	var clip: Animation = v.anim.get_animation("u2/Slide_Start")
+	var worst_turn := 0.0
+	var worst_stretch := 0.0
+	for i in 24:
+		for pitch in [-60.0, -20.0, 20.0, 60.0]:
+			_pose(sk, clip, 0.26)
+			var clip_chest := sk.get_bone_global_pose(sk.find_bone("spine_03")).basis.get_rotation_quaternion()
+			var y := deg_to_rad(i * 15.0)
+			var p := deg_to_rad(pitch)
+			_dive_catch(v, sk, _bone_pos(sk, "spine_03") + Vector3(sin(y) * cos(p), sin(p), cos(y) * cos(p)) * 0.9, 1.0)
+			var chest := sk.get_bone_global_pose(sk.find_bone("spine_03")).basis.get_rotation_quaternion()
+			worst_turn = maxf(worst_turn, rad_to_deg(clip_chest.angle_to(chest)))
+			for s in ["_r", "_l"]:
+				var u := _bone_pos(sk, "upperarm" + s)
+				var l := _bone_pos(sk, "lowerarm" + s)
+				var h := _bone_pos(sk, "hand" + s)
+				worst_stretch = maxf(worst_stretch, u.distance_to(h) - u.distance_to(l) - l.distance_to(h))
+	assert_true(worst_turn < rad_to_deg(Pose.DIVE_ROLL_MAX + Pose.DIVE_LEAN_MAX) + 1.0, "chest turns at most %.0f deg: worst %.1f" 		% [rad_to_deg(Pose.DIVE_ROLL_MAX + Pose.DIVE_LEAN_MAX), worst_turn])
+	assert_true(worst_turn > 30.0, "the chest does turn for some ball: worst %.1f" % worst_turn)
+	assert_true(worst_stretch < 0.005, "arm never stretched: worst %.3f m over" % worst_stretch)
+	v.free()
+
+## catch_dive blends the standing twist into the diving one: the chest moves steadily away
+## from the standing pose as catch_dive goes 0 to 1.
+func test_dive_blend_is_continuous() -> void:
+	var v = _view(Athlete.Role.WR)
+	var sk := _skel(v)
+	var clip: Animation = v.anim.get_animation("u2/Slide_Start")
+	var standing := Quaternion.IDENTITY
+	var turns := []
+	for d in [0.0, 0.25, 0.5, 0.75, 1.0]:
+		_pose(sk, clip, 0.26)
+		_dive_catch(v, sk, _bone_pos(sk, "spine_03") + Vector3(0.55, 0.1, 0.45), d)
+		var q := sk.get_bone_global_pose(sk.find_bone("spine_03")).basis.get_rotation_quaternion()
+		if d == 0.0:
+			standing = q
+		turns.append(rad_to_deg(standing.angle_to(q)))
+	for i in 4:
+		assert_true(turns[i + 1] > turns[i] + 1.0, "each quarter of the blend turns the chest further: %s" % str(turns))
+	v.free()
+
+func _dive_catch(v, sk: Skeleton3D, ball: Vector3, dive: float) -> void:
+	v.pose.catch_dive = dive
 	v.pose.catch_target = ball
 	v.pose.catch_reach = 1.0
 	v.pose.catch_weight = 1.0
 	v.pose.apply(sk)
 	sk.force_update_all_bone_transforms()
 
-	assert_true(_bone_pos(sk, "hand_r").distance_to(ball) < original_distance - 0.1, "the near hand reaches for the pass")
-	for bone in clip_rotations:
-		var rotation := sk.get_bone_pose_rotation(sk.find_bone(bone))
-		assert_true(rotation.is_equal_approx(clip_rotations[bone]), bone + " follows the slide")
-	v.free()
+## Degrees between the chest's front and the ball, both seen down the spine (the roll left).
+func _chest_off_ball(sk: Skeleton3D, ball: Vector3) -> float:
+	var s2 := _bone_pos(sk, "spine_02")
+	var spine := (_bone_pos(sk, "neck_01") - s2).normalized()
+	var front := sk.get_bone_global_pose(sk.find_bone("spine_03")).basis.z
+	var to := ball - s2
+	return rad_to_deg((front - spine * front.dot(spine)).angle_to(to - spine * to.dot(spine)))
 
 func test_reach_never_stretches_the_arm() -> void:
 	var v = _view(Athlete.Role.WR)
