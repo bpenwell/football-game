@@ -178,7 +178,7 @@ Whether CI should enforce the bump is #223; today it's a review rule.
 |---|---|
 | `t` | server tick (`main.gd:net_tick`) |
 | `a` | `PackedFloat32Array`, 7 per athlete: pos x/y, vel x/y, facing x/y, stamina |
-| `r` | `PackedInt32Array`, 3 per athlete: role, flags (DIVE 1, GROUND 2, LOCK 4, BLOCK 8, SPIN 16, SPIN_LEFT 32; bits 8+: jump time left in ms, #379), team |
+| `r` | `PackedInt32Array`, 3 per athlete: role, flags (DIVE 1, GROUND 2, LOCK 4, BLOCK 8, SPIN 16, SPIN_LEFT 32; bits 6-7 free; bits 8-17: jump time left in ms, #379; bits 18-23: ground time left in ticks, at most 63; bits 24-28: dive time left in ticks, at most 31, #397; bits 29-31 free), team |
 | `moves` | 2 per athlete: `move_charge`, `move_t` |
 | `b` | ball: state, holder, pos xyz, vel xyz |
 | `d`, `s`, `c`, `to` | downs (offense, down, los, first-down y), score, clock (half, remaining, play clock, final, quarter, quarter length in seconds), timeouts |
@@ -191,7 +191,9 @@ Each message contains a full snapshot. Before advancing its last accepted tick, 
 the payload types, array lengths for the advertised match size, finite numeric fields and input
 acknowledgments. A rejected snapshot leaves the previous game state and tick intact.
 `apply_snapshot` writes accepted state into the client's `World` and `Match`. Dive and ground
-flags become token timers (`0.01`), and optional fields retain their compatibility defaults.
+timers decode from their tick fields (at least 1 tick while the flag is set), so remote views time the
+dive's lie-then-rise like the host (#397; they were 0.01 s token timers, so `LayToIdle` played on landing).
+Optional fields retain their compatibility defaults.
 When adding wire fields, update the encoder, validator, decoder and protocol tests together.
 The quarter fields extend the clock array after its four original entries. If they are absent (a pre-quarters host),
 the client maps the half to Q1/Q3; a zero quarter length (the old halves marker) falls back to the default 2:30

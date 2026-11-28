@@ -3,6 +3,7 @@ extends RefCounted
 
 const T := preload("res://src/sim/tuning.gd")
 const Routes := preload("res://src/sim/routes.gd")
+const Tick := preload("res://src/sim/tick.gd")
 const World := preload("res://src/sim/world.gd")
 const DefensivePlaybook := preload("res://src/sim/defensive_playbook.gd")
 const DIVE_FLAG := 1
@@ -11,9 +12,14 @@ const LOCK_FLAG := 4
 const BLOCK_FLAG := 8
 const SPIN_FLAG := 16
 const SPIN_LEFT_FLAG := 32   # spin turned left (visual side)
+const JUMP_SHIFT := 8          # flags bits 8-17: jump time left in ms (0 = on the ground, #379)
+const JUMP_MASK := 1023
+const GROUND_SHIFT := 18        # flags bits 18-23: ground time left in ticks (#397)
+const GROUND_MASK := 63
+const DIVE_SHIFT := 24          # flags bits 24-28: dive time left in ticks (#397)
+const DIVE_MASK := 31
 const PASS_THROWN_FLAG := 1   # pass flags, separate from athlete flags
 const CROSSED_LOS_FLAG := 2
-const JUMP_SHIFT := 8          # flags bits 8+: jump time left in ms (0 = on the ground, #379)
 const Emotes := preload("res://src/sim/emotes.gd")
 
 static func encode_snapshot(m, tick: int, acks: Dictionary = {}) -> Dictionary:
@@ -27,7 +33,8 @@ static func encode_snapshot(m, tick: int, acks: Dictionary = {}) -> Dictionary:
 		flags |= (BLOCK_FLAG if ath.blocking else 0) | (SPIN_FLAG if ath.is_spinning() else 0)
 		if ath.is_spinning() and ath.spin_dir < 0:
 			flags |= SPIN_LEFT_FLAG
-		flags |= roundi(ath.jump_t * 1000.0) << JUMP_SHIFT
+		flags |= clampi(roundi(ath.jump_t * 1000.0), 0, JUMP_MASK) << JUMP_SHIFT
+		flags |= _ticks(ath.recover_t, GROUND_MASK) << GROUND_SHIFT | _ticks(ath.dive_t, DIVE_MASK) << DIVE_SHIFT
 		r.append_array([ath.role, flags, ath.team])
 		moves.append_array([ath.move_charge, ath.move_t])
 	var b = w.ball
@@ -148,8 +155,8 @@ static func apply_snapshot(m, s: Dictionary) -> void:
 		ath.stamina = a[o + 6]
 		ath.role = r[i * 3]
 		var flags := r[i * 3 + 1]
-		ath.dive_t = 0.01 if flags & DIVE_FLAG else 0.0
-		ath.recover_t = 0.01 if flags & GROUND_FLAG else 0.0
+		ath.dive_t = maxi(1, flags >> DIVE_SHIFT & DIVE_MASK) / Tick.HZ if flags & DIVE_FLAG else 0.0
+		ath.recover_t = maxi(1, flags >> GROUND_SHIFT & GROUND_MASK) / Tick.HZ if flags & GROUND_FLAG else 0.0
 		ath.set_lock = (flags & LOCK_FLAG) != 0
 		ath.blocking = (flags & BLOCK_FLAG) != 0
 		ath.spin_move = (flags & SPIN_FLAG) != 0
@@ -157,7 +164,7 @@ static func apply_snapshot(m, s: Dictionary) -> void:
 			ath.move_charge = moves[i * 2]
 			ath.move_t = moves[i * 2 + 1]
 		ath.spin_dir = -1 if flags & SPIN_LEFT_FLAG else 1
-		ath.jump_t = minf(float(flags >> JUMP_SHIFT) / 1000.0, T.JUMP_TIME)
+		ath.jump_t = minf(float(flags >> JUMP_SHIFT & JUMP_MASK) / 1000.0, T.JUMP_TIME)
 	var b: PackedFloat32Array = s["b"]
 	w.ball.state = int(b[0])
 	w.ball.holder_id = int(b[1])
@@ -201,6 +208,10 @@ static func apply_snapshot(m, s: Dictionary) -> void:
 	for i in rt.size():
 		if rt[i] >= 0 and rt[i] < Routes.ROUTE_NAMES.size():
 			w.route_of[i] = Routes.ROUTE_NAMES[rt[i]]
+
+## Seconds left on a timer as whole ticks for the wire: at least 1 while it runs, capped to the field.
+static func _ticks(t: float, cap: int) -> int:
+	return clampi(roundi(t * Tick.HZ), 1, cap) if t > 0.0 else 0
 
 static func _finite_v(v) -> bool:
 	return v is Vector2 and is_finite(v.x) and is_finite(v.y)
@@ -353,7 +364,7 @@ static func apply_action(m, athlete_id: int, action) -> bool:
 ## Wire/sim compatibility version. Bump it in the same PR as any change to the wire format
 ## (message keys or fields, snapshot layout, action shapes) or to sim rules a host and client
 ## must agree on (src/sim). Rule and reasons: docs/design/netcode.md "Version handshake".
-const VERSION := 12
+const VERSION := 13
 const VERSION_FILE := "res://VERSION"
 const VERSION_FLAG := "--protocol-version="   # debug: pretend to be another version (net_test.sh)
 

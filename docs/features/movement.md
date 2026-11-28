@@ -79,6 +79,8 @@ Passing, handoff and play-call keys are in [offense.md](offense.md).
 - Any opponent of the carrier whose dive brings him within `TACKLE_REACH` (1.0 yd) tackles him, unless the carrier is
   spinning. A tackle can also strip the ball (rules link above).
 - After the dive you are grounded for `DIVE_RECOVER` (1.0 s), sliding to a stop. Grounded players don't collide or block.
+  Online clients get the remaining ground time in every snapshot, so they see the same lie-then-rise (#397,
+  `tests/visual/remote_dive_lying_test.gd`).
 - Anyone can dive, including the carrier (a lunge; the play stays live while he lies there).
 - Bots dive when within `AI_DIVE_RANGE` (2.0 yd) of the carrier.
 

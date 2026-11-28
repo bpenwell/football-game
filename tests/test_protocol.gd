@@ -55,6 +55,29 @@ func test_snapshot_round_trip() -> void:
 	assert_eq(b.downs.down, 3, "down")
 	assert_true(bytes.size() < 1400, "fits one MTU-ish packet (%d bytes)" % bytes.size())
 
+## #397: the remaining dive and ground time cross the wire to the tick, next to a jump, so a
+## client's view lies down as long as the host's (it used to decode a 0.01 s token timer).
+func test_snapshot_carries_dive_and_ground_time() -> void:
+	var a := _match()
+	a.world.athletes[1].dive_t = 0.2
+	a.world.athletes[2].recover_t = 1.0
+	a.world.athletes[2].jump_t = 0.6   # not a real combo: proves the bit fields stay apart
+	a.world.athletes[3].recover_t = 0.004   # under half a tick still reads as grounded
+	a.world.athletes[4].recover_t = 5.0     # longer than the field holds: saturates, stays grounded
+	var b := _match()
+	P.apply_snapshot(b, bytes_to_var(var_to_bytes(P.encode_snapshot(a, 7))))
+	assert_near(b.world.athletes[1].dive_t, 0.2, DT / 2.0, "dive time left")
+	assert_near(b.world.athletes[2].recover_t, 1.0, DT / 2.0, "ground time left")
+	assert_near(b.world.athletes[2].jump_t, 0.6, 0.001, "jump time beside the ground time")
+	assert_true(b.world.athletes[3].is_grounded(), "a sliver of ground time stays grounded")
+	assert_near(b.world.athletes[4].recover_t, P.GROUND_MASK * DT, 0.001, "ground time saturates")
+	assert_eq(b.world.athletes[0].recover_t + b.world.athletes[0].dive_t, 0.0, "standing athlete has no timers")
+	# The fields must hold the real timers: grow a tuning value past one and widen its field.
+	var T := preload("res://src/sim/tuning.gd")
+	assert_true(roundi(T.JUMP_TIME * 1000.0) <= P.JUMP_MASK, "JUMP_TIME fits the jump field")
+	assert_true(roundi(maxf(T.DIVE_RECOVER, T.FUMBLE_KNOCKDOWN) / DT) <= P.GROUND_MASK, "ground timers fit the ground field")
+	assert_true(roundi(T.DIVE_TIME / DT) <= P.DIVE_MASK, "DIVE_TIME fits the dive field")
+
 func test_snapshot_carries_and_clears_the_crossing_flag() -> void:
 	var host := _match()
 	var remote := _match()
