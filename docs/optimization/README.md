@@ -21,6 +21,8 @@ Rules:
   144 Hz screen (or after a slow frame that ran 2 ticks) it judders. Record a target per tick
   and draw between the last two in `_process`: `place()` / `interpolate(f)` with
   `f = Engine.get_physics_interpolation_fraction()`. See `src/game/player.gd` and `main._place_ball`.
+  Never feed the drawn (interpolated) value back in as the next target: with f near 0 it
+  flips sign every tick and never settles (#422). Smooth turns on the targets, per tick (#423).
   (Godot 4.3 has no built-in 3D physics interpolation; that arrived in 4.4.)
 - Big jumps (new formation, replay seek, position swap) must **snap**, not glide: `TELEPORT_DIST`.
 - Smoothing must be frame-rate independent: `lerp(a, b, 1.0 - exp(-k * delta))`, never

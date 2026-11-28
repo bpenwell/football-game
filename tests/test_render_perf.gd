@@ -6,6 +6,8 @@ const RC := preload("res://src/game/render_cache.gd")
 const PlayerNode := preload("res://src/game/player.gd")
 const CharacterArt := preload("res://src/game/art/character_art.gd")
 const Uniforms := preload("res://src/game/art/football_uniforms.gd")
+const Athlete := preload("res://src/sim/athlete.gd")
+const Tick := preload("res://src/sim/tick.gd")
 
 func test_cache_shares_meshes_and_materials() -> void:
 	assert_true(RC.sphere(0.3) == RC.sphere(0.3), "same sphere key -> same mesh")
@@ -53,5 +55,64 @@ func test_yaw_interpolates_the_short_way() -> void:
 	v.place(Vector3.ZERO, PI - 0.1)
 	v.place(Vector3(0.1, 0, 0), -PI + 0.1)
 	v.interpolate(0.5)
-	assert_true(absf(absf(v.rotation.y) - PI) < 0.01, "wraps through PI, not through 0 (%.2f)" % v.rotation.y)
+	# The second target is already turned TURN_K's share of the way (#423), across PI.
+	var target := PI - 0.1 + 0.2 * (1.0 - exp(-PlayerNode.TURN_K * Tick.DT))
+	assert_true(absf(angle_difference(v.rotation.y, PI - 0.1 + (target - (PI - 0.1)) * 0.5)) < 0.01,
+		"wraps through PI, not through 0 (%.2f)" % v.rotation.y)
+	v.place(Vector3.ZERO, 0.0, false)
+	v.place(Vector3(0.1, 0, 0), PI - 0.1, false)
+	v.interpolate(0.5)
+	assert_near(v.rotation.y, (PI - 0.1) * 0.5, 0.01, "unsmoothed (replay) targets interpolate as given")
 	v.free()
+
+## #422: a view whose athlete has stopped holds its facing. sync() used to read the drawn
+## (interpolated) rotation back as the next target, so a standing player flipped every frame.
+func test_standing_view_holds_its_facing() -> void:
+	var v = _synced_view()
+	v.athlete.velocity = Vector2(4.0, 0.0)   # a turn to the side, then stop
+	_tick(v, 0.0)
+	v.athlete.velocity = Vector2.ZERO
+	var worst := 0.0
+	var last: float = v.rotation.y
+	for i in 40:
+		_tick(v, 0.0)   # worst case: drawn right at the tick (f = 0)
+		if i >= 20:
+			worst = maxf(worst, absf(angle_difference(last, v.rotation.y)))
+		last = v.rotation.y
+	assert_true(worst < 0.002, "standing still, the facing settles: worst %.4f rad per frame" % worst)
+	assert_near(v.rotation.y, atan2(-4.0, 0.0), 0.02, "and finishes the turn it started")
+	v.free()
+
+## #423: a reversal turns the drawn facing over several ticks, not in one frame. The sim turns at once.
+func test_view_turns_smoothly_on_a_reversal() -> void:
+	var v = _synced_view()
+	v.athlete.velocity = Vector2(0.0, 6.0)
+	for i in 30:
+		_tick(v, 1.0)
+	v.athlete.velocity = Vector2(0.0, -6.0)
+	var worst := 0.0
+	var last: float = v.rotation.y
+	for i in 20:
+		_tick(v, 1.0)
+		worst = maxf(worst, absf(angle_difference(last, v.rotation.y)))
+		last = v.rotation.y
+	assert_true(worst < deg_to_rad(45.0), "at most 45 deg per tick: worst %.0f" % rad_to_deg(worst))
+	assert_true(absf(angle_difference(v.rotation.y, atan2(0.0, -6.0))) < deg_to_rad(10.0), "faces the new way within 20 ticks (%.0f deg)" % rad_to_deg(v.rotation.y))
+	v.place(Vector3(40, 0, -40), 1.0)   # teleport: no turn
+	v.interpolate(0.0)
+	assert_near(v.rotation.y, 1.0, 0.0001, "a teleport snaps the facing")
+	v.free()
+
+func _synced_view():
+	var a = Athlete.new()
+	a.role = Athlete.Role.WR
+	var v = PlayerNode.new()
+	v.setup(a, Color(0.8, 0.2, 0.2))
+	v._ready()
+	v.sync()
+	return v
+
+## One sim tick (sync) and one drawn frame at interpolation fraction f.
+func _tick(v, f: float) -> void:
+	v.sync()
+	v.interpolate(f)

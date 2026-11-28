@@ -22,6 +22,9 @@ const Replay := preload("res://src/sim/replay.gd")
 ## A view that moves more than this (yards) in one tick teleported (new play, replay
 ## seek, swap): snap instead of gliding across the field.
 const TELEPORT_DIST := 2.0
+## View turn rate (1/s): each tick the drawn facing goes 1 - exp(-TURN_K * DT) of the way to the
+## sim's, so a 180 deg cut turns over ~0.2 s instead of in one frame (#423). The sim turns at once.
+const TURN_K := 16.0
 
 const SKIN_TONES := [Color(0.98, 0.80, 0.66), Color(0.87, 0.65, 0.48), Color(0.72, 0.50, 0.34),
 	Color(0.55, 0.36, 0.23), Color(0.40, 0.26, 0.17), Color(0.30, 0.20, 0.13)]
@@ -138,6 +141,7 @@ var _prev_pos := Vector3.ZERO
 var _cur_pos := Vector3.ZERO
 var _prev_yaw := 0.0
 var _cur_yaw := 0.0
+var _want_yaw := 0.0   # sim facing sync() last aimed at; place() turns _cur_yaw toward it (TURN_K)
 var _has_pose := false
 
 func setup(a, c: Color, w = null, opponent := false) -> void:
@@ -506,7 +510,9 @@ func _role_name() -> String:
 func sync() -> void:
 	replay_flags = -1
 	block_shield.visible = athlete.blocking
-	var yaw := rotation.y
+	# Not moving: keep the last wanted facing. Reading back the drawn rotation (itself
+	# interpolated from the targets) fed the view's own facing into the next target and shook it (#422).
+	var yaw := _want_yaw if _has_pose else rotation.y
 	var to_foe := _to_foe()
 	if athlete.blocking:
 		yaw = atan2(-athlete.facing.x, athlete.facing.y)
@@ -516,6 +522,7 @@ func sync() -> void:
 		yaw = atan2(-athlete.velocity.x, athlete.velocity.y)
 	elif athlete.facing.length() > 0.1 and world != null and int(world.phase) == 0:
 		yaw = atan2(-athlete.facing.x, athlete.facing.y)
+	_want_yaw = yaw
 	place(Vector3(athlete.position.x, 0, -athlete.position.y), yaw)
 	var rn := _role_name()
 	if rn != _role:
@@ -545,7 +552,9 @@ func _process(delta: float) -> void:
 	var live := replay_flags < 0
 	var diving: bool = athlete.is_diving() if live else (replay_flags & Replay.F_DIVING) != 0
 	var down: bool = diving or (athlete.is_grounded() or is_falling() if live else (replay_flags & Replay.F_GROUNDED) != 0)
-	if spd > 0.4 and not down and not ((live and athlete.blocking) or _push):
+	# Live views turn in place() (smoothed per tick); a replay (no recorded facing, #209) or a
+	# view jogging back after a fall (interpolate() leaves it alone) faces the way it moves.
+	if spd > 0.4 and not down and not ((live and athlete.blocking) or _push) and (not live or chase_sim):
 		rotation.y = lerp_angle(rotation.y, atan2(-_vel.x, -_vel.z), clampf(delta * 14.0, 0.0, 1.0))
 	_hit_t = maxf(0.0, _hit_t - delta)
 	emote_t = maxf(0.0, emote_t - delta)
@@ -703,7 +712,9 @@ func _locomotion(spd: float, presnap: bool, backward := false) -> void:
 		_play("Sprint", BLEND, clampf(spd / 6.8, 0.8, 1.7))
 
 ## Record a new sim (or replay) pose, once per physics tick. Big jumps snap.
-func place(p: Vector3, yaw: float) -> void:
+## smooth: turn toward `yaw` at TURN_K. A replay passes false: it has no recorded facing and
+## hands in the view's own turned rotation (main._render_replay).
+func place(p: Vector3, yaw: float, smooth := true) -> void:
 	if not _has_pose or p.distance_to(_cur_pos) > TELEPORT_DIST:
 		if is_falling():
 			fall.stop()   # next play: back on his feet
@@ -714,6 +725,8 @@ func place(p: Vector3, yaw: float) -> void:
 	else:
 		_prev_pos = _cur_pos
 		_prev_yaw = _cur_yaw
+		if smooth:
+			yaw = lerp_angle(_cur_yaw, yaw, 1.0 - exp(-TURN_K * Tick.DT))
 	_cur_pos = p
 	_cur_yaw = yaw
 	if is_falling() or chase_sim:
@@ -733,6 +746,9 @@ func interpolate(f: float) -> void:
 		var spd := _prev_pos.distance_to(_cur_pos) * Tick.HZ + CHASE_SPEED
 		position = position.move_toward(to, spd * get_process_delta_time())
 		chase_sim = position.distance_to(to) > 0.01
+		if not chase_sim:   # back on the spot: turn from the jog to the sim facing (place()), no snap
+			_prev_yaw = rotation.y
+			_cur_yaw = rotation.y
 		return
 	position = _prev_pos.lerp(_cur_pos, f)
 	rotation.y = lerp_angle(_prev_yaw, _cur_yaw, f)
