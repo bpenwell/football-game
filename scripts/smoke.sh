@@ -7,9 +7,16 @@ USERDATA="${XDG_DATA_HOME:-$HOME/.local/share}/crater-bowl"   # project.godot cu
 before=$(ls -l --time-style=+%s "$USERDATA"/{profile,leaderboard,ranked}.json "$USERDATA"/settings.cfg "$USERDATA"/replays 2>/dev/null)
 GODOT="${GODOT:-godot}"
 FRAMES="${FRAMES:-300}"
+BOOT_TIMEOUT=60
 "$GODOT" --headless --path . --import >/dev/null 2>&1 || true
-timeout 60 "$GODOT" --headless --path . --quit-after "$FRAMES" > .smoke-output.log 2>&1
+timeout "$BOOT_TIMEOUT" "$GODOT" --headless --path . --quit-after "$FRAMES" > .smoke-output.log 2>&1
+boot=$?
 cat .smoke-output.log
+case "$boot" in
+  0) ;;
+  124) echo "SMOKE FAIL: boot timed out after ${BOOT_TIMEOUT}s (log: .smoke-output.log)"; exit 1 ;;
+  *) echo "SMOKE FAIL: boot exited with status $boot (log: .smoke-output.log)"; exit 1 ;;
+esac
 # Dummy-renderer mesh spam (`Parameter "m" is null`, mesh_storage.h) used to be allowed
 # here; src/game/headless_mesh_guard.gd removes it (#92), so every run below fails on it.
 MESH_NULL='Parameter "m" is null'
